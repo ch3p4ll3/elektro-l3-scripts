@@ -1,0 +1,8 @@
+# /etc/systemd/system/l3-hrit.service
+[Unit]
+Description=Elektro-L3 HRIT decode
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/l3-hrit.sh
+User=mattia

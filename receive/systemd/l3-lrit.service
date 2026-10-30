@@ -1,0 +1,8 @@
+# /etc/systemd/system/l3-lrit.service
+[Unit]
+Description=Elektro-L3 LRIT decode
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/l3-lrit.sh
+User=mattia

@@ -1,0 +1,10 @@
+# /etc/systemd/system/l3-hrit.timer
+[Unit]
+Description=Elektro-L3 HRIT slots (UTC)
+
+[Timer]
+OnCalendar=*-*-* 00,03,06,09,12,15,18,21:11:00 UTC
+Persistent=false
+
+[Install]
+WantedBy=timers.target
