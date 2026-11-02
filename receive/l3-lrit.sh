@@ -1,6 +1,6 @@
 #!/bin/bash
 # /usr/local/bin/l3-lrit.sh
-#OUT=/home/mattia/Desktop/elektro_l3/$(date -u +%Y%m%d_%H%M)
+#OUT=$L3_HOME/$(date -u +%Y%m%d_%H%M)
 
 #mkdir OUT
 
@@ -11,9 +11,32 @@
 #!/bin/bash
 # /usr/local/bin/l3-lrit.sh
 set -u
+
+# --- elektro_l3 home folder -------------------------------------------------
+# Resolution order (first match wins):
+#   1. -d DIR
+#   2. $L3_HOME in the environment
+#   3. L3_HOME in /etc/elektro-l3.conf (written by install.sh --home DIR)
+#   4. $HOME/Desktop/elektro_l3
+L3_CONF="${L3_CONF:-/etc/elektro-l3.conf}"
+if [[ -z "${L3_HOME:-}" && -r "$L3_CONF" ]]; then
+    # shellcheck disable=SC1090
+    . "$L3_CONF"
+fi
+L3_HOME="${L3_HOME:-$HOME/Desktop/elektro_l3}"
+
+while getopts ":d:" opt; do
+    case "$opt" in
+        d) L3_HOME="$OPTARG" ;;
+        *) echo "Usage: $0 [-d L3_HOME]" >&2; exit 1 ;;
+    esac
+done
+shift $((OPTIND - 1))
+L3_HOME="${L3_HOME%/}"
+
 STAMP=$(date -u +%Y%m%d_%H%M)
-#BASE=/home/mattia/Desktop/elektro_l3/baseband/l3_$STAMP     # no extension: SatDump adds it
-OUT=/home/mattia/Desktop/elektro_l3/lrit/products/$STAMP
+#BASE=$L3_HOME/baseband/l3_$STAMP     # no extension: SatDump adds it
+OUT="$L3_HOME/lrit/products/$STAMP"
 
 mkdir -p "$OUT"
 

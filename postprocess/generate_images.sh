@@ -9,27 +9,45 @@
 #   <PRODUCTS_ROOT>/<date>/IMAGES/ELEKTRO-L3/<date>/.../product.cbor
 # (product.cbor is searched at any depth under each acquisition folder)
 #
-# Usage:
-#   ./elektro_process.sh [-j JOBS] [products date folder]
+# <PRODUCTS_ROOT> = <L3_HOME>/lrit/products, <OUT_ROOT> = <L3_HOME>/lrit/images.
+# <L3_HOME> defaults to ~/Desktop/elektro_l3; see the config block below.
 #
-#   ./elektro_process.sh                      # everything, JOBS = 4
-#   ./elektro_process.sh -j 8                 # 8 parallel satdump processes
-#   ./elektro_process.sh 20261028_1241        # only products/20261028_1241
-#   ./elektro_process.sh -j 2 20261028_1241
+# Usage:
+#   ./generate_images.sh [-d L3_HOME] [-j JOBS] [products date folder]
+#
+#   ./generate_images.sh                      # everything, JOBS = 4
+#   ./generate_images.sh -j 8                 # 8 parallel satdump processes
+#   ./generate_images.sh 20261028_1241        # only products/20261028_1241
+#   ./generate_images.sh -d /data/elektro_l3 -j 2 20261028_1241
 
 set -u
 
-PRODUCTS_ROOT="/home/mattia/Desktop/elektro_l3/lrit/products"
-OUT_ROOT="/home/mattia/Desktop/elektro_l3/lrit/images"
+# --- elektro_l3 home folder -------------------------------------------------
+# Resolution order (first match wins):
+#   1. -d DIR
+#   2. $L3_HOME in the environment
+#   3. L3_HOME in /etc/elektro-l3.conf (written by install.sh --home DIR)
+#   4. $HOME/Desktop/elektro_l3
+L3_CONF="${L3_CONF:-/etc/elektro-l3.conf}"
+if [[ -z "${L3_HOME:-}" && -r "$L3_CONF" ]]; then
+    # shellcheck disable=SC1090
+    . "$L3_CONF"
+fi
+L3_HOME="${L3_HOME:-$HOME/Desktop/elektro_l3}"
 JOBS=4
 
-while getopts ":j:" opt; do
+while getopts ":d:j:" opt; do
     case "$opt" in
+        d) L3_HOME="$OPTARG" ;;
         j) JOBS="$OPTARG" ;;
-        *) echo "Usage: $0 [-j JOBS] [products date folder]" >&2; exit 1 ;;
+        *) echo "Usage: $0 [-d L3_HOME] [-j JOBS] [products date folder]" >&2; exit 1 ;;
     esac
 done
 shift $((OPTIND - 1))
+
+L3_HOME="${L3_HOME%/}"
+PRODUCTS_ROOT="$L3_HOME/lrit/products"
+OUT_ROOT="$L3_HOME/lrit/images"
 
 if ! [[ "$JOBS" =~ ^[1-9][0-9]*$ ]]; then
     echo "Error: -j needs a positive integer" >&2

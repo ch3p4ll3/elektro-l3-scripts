@@ -21,33 +21,51 @@
 # phones cannot play lossless video) is also written next to the .mkv.
 # Use -L to skip it, -w WIDTH to downscale it (e.g. 2048 for older phones).
 #
-# Usage:
-#   ./elektro_timelapse.sh [-j JOBS] [-f FPS] [-w WIDTH] [-L] [composite name]
+# <IMAGES_ROOT> = <L3_HOME>/lrit/images, <TIMELAPSE_ROOT> = <L3_HOME>/lrit/timelapses.
+# <L3_HOME> defaults to ~/Desktop/elektro_l3; see the config block below.
 #
-#   ./elektro_timelapse.sh                    # all composites, 4 jobs, 10 fps
-#   ./elektro_timelapse.sh -f 15              # 15 frames per second
-#   ./elektro_timelapse.sh -j 2 "msu_gs_Natural_Color"   # only that composite
+# Usage:
+#   ./generate_timelapse.sh [-d L3_HOME] [-j JOBS] [-f FPS] [-w WIDTH] [-L] [composite name]
+#
+#   ./generate_timelapse.sh                   # all composites, 4 jobs, 10 fps
+#   ./generate_timelapse.sh -f 15             # 15 frames per second
+#   ./generate_timelapse.sh -d /data/elektro_l3 -j 2 "msu_gs_Natural_Color"
 
 set -u
 
-IMAGES_ROOT="/home/mattia/Desktop/elektro_l3/lrit/images"
-TIMELAPSE_ROOT="/home/mattia/Desktop/elektro_l3/lrit/timelapses"
+# --- elektro_l3 home folder -------------------------------------------------
+# Resolution order (first match wins):
+#   1. -d DIR
+#   2. $L3_HOME in the environment
+#   3. L3_HOME in /etc/elektro-l3.conf (written by install.sh --home DIR)
+#   4. $HOME/Desktop/elektro_l3
+L3_CONF="${L3_CONF:-/etc/elektro-l3.conf}"
+if [[ -z "${L3_HOME:-}" && -r "$L3_CONF" ]]; then
+    # shellcheck disable=SC1090
+    . "$L3_CONF"
+fi
+L3_HOME="${L3_HOME:-$HOME/Desktop/elektro_l3}"
 JOBS=4
 FPS=10
 
 PHONE=1     # also create a phone-friendly .mp4 next to the lossless .mkv
 WIDTH=0     # width of the phone .mp4 (0 = keep original size)
 
-while getopts ":j:f:w:L" opt; do
+while getopts ":d:j:f:w:L" opt; do
     case "$opt" in
+        d) L3_HOME="$OPTARG" ;;
         j) JOBS="$OPTARG" ;;
         f) FPS="$OPTARG" ;;
         w) WIDTH="$OPTARG" ;;
         L) PHONE=0 ;;
-        *) echo "Usage: $0 [-j JOBS] [-f FPS] [-w WIDTH] [-L] [composite name]" >&2; exit 1 ;;
+        *) echo "Usage: $0 [-d L3_HOME] [-j JOBS] [-f FPS] [-w WIDTH] [-L] [composite name]" >&2; exit 1 ;;
     esac
 done
 shift $((OPTIND - 1))
+
+L3_HOME="${L3_HOME%/}"
+IMAGES_ROOT="$L3_HOME/lrit/images"
+TIMELAPSE_ROOT="$L3_HOME/lrit/timelapses"
 
 for pair in "JOBS:$JOBS" "FPS:$FPS"; do
     label="${pair%%:*}"; value="${pair#*:}"

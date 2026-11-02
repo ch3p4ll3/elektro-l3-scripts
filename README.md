@@ -21,6 +21,7 @@ rtl_tcp (SDR)  ──>  SatDump live decode  ──>  products/<date>/.../produc
 ```
 .
 ├── README.md
+├── install.sh                    # curl | sh installer (see Quick install)
 ├── receive/                      # automatic reception (run by systemd)
 │   ├── l3-lrit.sh                # one LRIT receive slot
 │   ├── l3-hrit.sh                # one HRIT receive slot
@@ -94,6 +95,46 @@ ffmpeg -hide_banner -encoders | grep ffv1
 
 ---
 
+## Quick install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ch3p4ll3/elektro-l3-scripts/main/install.sh | sh
+# options go after "sh -s --", e.g.:
+curl -fsSL https://raw.githubusercontent.com/ch3p4ll3/elektro-l3-scripts/main/install.sh \
+  | sh -s -- --home /data/elektro_l3 --enable
+```
+
+The installer clones the repo to `~/.local/share/elektro-l3-scripts`, installs
+`l3-lrit.sh`, `l3-hrit.sh`, `l3-generate-images` and `l3-generate-timelapse`
+to `/usr/local/bin`, installs the systemd units (with `User=` set to you) and
+writes `/etc/elektro-l3.conf`. Re-run it to update.
+
+| Option | Meaning |
+|---|---|
+| `--home DIR` | the elektro_l3 data folder (default `~/Desktop/elektro_l3`) |
+| `--enable` | enable and start both timers |
+| `--no-systemd` | scripts only, no units |
+| `--uninstall` [`--purge`] | remove what was installed (`--purge` also deletes the clone); data is never touched |
+
+The manual steps below do the same thing by hand.
+
+## The data folder (`L3_HOME`)
+
+Everything is stored under one folder, `L3_HOME`:
+
+```
+<L3_HOME>/lrit/products   <L3_HOME>/lrit/images   <L3_HOME>/lrit/timelapses
+<L3_HOME>/hrit/products
+```
+
+Every script resolves it the same way (first match wins):
+
+1. `-d DIR` on the command line (`l3-lrit.sh -d /data/elektro_l3`)
+2. the `L3_HOME` environment variable
+3. `L3_HOME=...` in `/etc/elektro-l3.conf` (written by `install.sh --home`; this is
+   what the systemd services use — edit the file to move the folder later)
+4. `~/Desktop/elektro_l3`
+
 ## Where to save the files
 
 Clone this repository **anywhere you like** (e.g.
@@ -122,29 +163,29 @@ postprocess/generate_timelapse.sh
 
 ## Configuration
 
-All paths and radio settings are hard-coded at the top of each script — edit
-them before installing / running:
+Paths come from `L3_HOME` (see above). The radio settings are hard-coded in
+the receive scripts — edit them before installing / running:
 
 | File | Variable / setting | Default | Meaning |
 |---|---|---|---|
-| `receive/l3-lrit.sh` | `OUT` | `/home/mattia/Desktop/elektro_l3/lrit/products/$STAMP` | where LRIT products are written (no trailing slash) |
-| `receive/l3-hrit.sh` | `OUT` | `/home/mattia/Desktop/elektro_l3/hrit/products/$STAMP` | where HRIT products are written |
+| `receive/l3-lrit.sh` | `OUT` | `$L3_HOME/lrit/products/$STAMP` | where LRIT products are written |
+| `receive/l3-hrit.sh` | `OUT` | `$L3_HOME/hrit/products/$STAMP` | where HRIT products are written |
 | `receive/l3-*.sh` | `--ip_address` / `--port` | `192.168.0.1` / `1234` | rtl_tcp server feeding SatDump |
 | `receive/l3-*.sh` | `--frequency` | `1691e6` | Elektro-L3 downlink (1691 MHz) |
 | `receive/l3-*.sh` | `--samplerate` | `1.024e6` (LRIT), `2.56e6` (HRIT) | input sample rate |
 | `receive/l3-*.sh` | `--gain`, `--bias`, `--timeout` | `32.8`, on, `900` s | tuner gain, bias-tee, slot length |
 | `receive/l3-*.sh` | `--http_server` | `0.0.0.0:8080` | SatDump live view in a browser |
-| `receive/systemd/l3-*.service` | `User=` | `mattia` | **change to your username** |
+| `receive/systemd/l3-*.service` | `User=` | `mattia` | **change to your username** (`install.sh` does this for you) |
 | `receive/systemd/l3-*.timer` | `OnCalendar` | `00,03,…,21:11` (HRIT), `…:41` (LRIT) UTC | schedule |
-| `postprocess/generate_images.sh` | `PRODUCTS_ROOT` | `…/lrit/products` | input products tree |
-| `postprocess/generate_images.sh` | `OUT_ROOT` | `…/lrit/images` | output composites |
-| `postprocess/generate_timelapse.sh` | `IMAGES_ROOT` | `…/lrit/images` | input composites |
-| `postprocess/generate_timelapse.sh` | `TIMELAPSE_ROOT` | `…/lrit/timelapses` | output videos (must be outside `IMAGES_ROOT`) |
+| `postprocess/generate_images.sh` | `PRODUCTS_ROOT` | `$L3_HOME/lrit/products` | input products tree |
+| `postprocess/generate_images.sh` | `OUT_ROOT` | `$L3_HOME/lrit/images` | output composites |
+| `postprocess/generate_timelapse.sh` | `IMAGES_ROOT` | `$L3_HOME/lrit/images` | input composites |
+| `postprocess/generate_timelapse.sh` | `TIMELAPSE_ROOT` | `$L3_HOME/lrit/timelapses` | output videos (must be outside `IMAGES_ROOT`) |
 
 > **Note:** `generate_images.sh` currently points at the *LRIT* products
 > folder. To process HRIT acquisitions too, change `PRODUCTS_ROOT` (and
-> `OUT_ROOT`) to `/home/mattia/Desktop/elektro_l3/hrit/...` and run it a
-> second time — or point both at a common parent directory.
+> `OUT_ROOT`) to `$L3_HOME/hrit/...` and run it a second time — or point both
+> at a common parent directory.
 
 ---
 
@@ -172,14 +213,14 @@ Manual test without systemd:
 
 ```bash
 sudo rtl_tcp -a 0.0.0.0 -p 1234 &   # on the machine with the dongle
-l3-lrit.sh                            # run one slot in the foreground
+l3-lrit.sh                            # run one slot in the foreground (-d DIR to pick the data folder)
 journalctl -u l3-lrit.service -f      # or inspect the last slot
 ```
 
 ### 2. Images (`postprocess/generate_images.sh`)
 
 ```
-./generate_images.sh [-j JOBS] [products date folder]
+./generate_images.sh [-d L3_HOME] [-j JOBS] [products date folder]
 ```
 
 Scans `<PRODUCTS_ROOT>/<date>/IMAGES/ELEKTRO-L3/<date>/.../product.cbor`,
@@ -263,7 +304,7 @@ Notes:
 ### 3. Timelapses (`postprocess/generate_timelapse.sh`)
 
 ```
-./generate_timelapse.sh [-j JOBS] [-f FPS] [-w WIDTH] [-L] [composite name]
+./generate_timelapse.sh [-d L3_HOME] [-j JOBS] [-f FPS] [-w WIDTH] [-L] [composite name]
 ```
 
 For every folder in `<IMAGES_ROOT>` (frames sorted by filename, which sorts
