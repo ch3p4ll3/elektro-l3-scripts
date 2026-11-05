@@ -21,14 +21,21 @@
 # phones cannot play lossless video) is also written next to the .mkv.
 # Use -L to skip it, -w WIDTH to downscale it (e.g. 2048 for older phones).
 #
+# Frames taken at 00:00 (file name <YYYYMMDD>_0000.png) can be left out of
+# the video for selected composites with -s NAME (repeatable, or a
+# comma-separated list; "all" = every composite). Only the listed composites
+# are filtered; the others keep every frame. Source PNGs are never touched.
+#
 # <IMAGES_ROOT> = <L3_HOME>/lrit/images, <TIMELAPSE_ROOT> = <L3_HOME>/lrit/timelapses.
 # <L3_HOME> defaults to ~/Desktop/elektro_l3; see the config block below.
 #
 # Usage:
-#   ./generate_timelapse.sh [-d L3_HOME] [-j JOBS] [-f FPS] [-w WIDTH] [-L] [composite name]
+#   ./generate_timelapse.sh [-d L3_HOME] [-j JOBS] [-f FPS] [-w WIDTH] [-L] [-s COMPOSITE]... [composite name]
 #
 #   ./generate_timelapse.sh                   # all composites, 4 jobs, 10 fps
 #   ./generate_timelapse.sh -f 15             # 15 frames per second
+#   ./generate_timelapse.sh -s msu_gs_Natural_Color            # drop 00:00 frames of that composite
+#   ./generate_timelapse.sh -s msu_gs_Natural_Color,msu_gs_IR  # ...of several composites
 #   ./generate_timelapse.sh -d /data/elektro_l3 -j 2 "msu_gs_Natural_Color"
 
 set -u
@@ -50,15 +57,18 @@ FPS=10
 
 PHONE=1     # also create a phone-friendly .mp4 next to the lossless .mkv
 WIDTH=0     # width of the phone .mp4 (0 = keep original size)
+SKIP_TIME="0000"    # HHMM of the frames dropped for composites given with -s
+SKIP_LIST=()        # composites whose SKIP_TIME frames are left out
 
-while getopts ":d:j:f:w:L" opt; do
+while getopts ":d:j:f:w:Ls:" opt; do
     case "$opt" in
         d) L3_HOME="$OPTARG" ;;
         j) JOBS="$OPTARG" ;;
         f) FPS="$OPTARG" ;;
         w) WIDTH="$OPTARG" ;;
         L) PHONE=0 ;;
-        *) echo "Usage: $0 [-d L3_HOME] [-j JOBS] [-f FPS] [-w WIDTH] [-L] [composite name]" >&2; exit 1 ;;
+        s) IFS=',' read -ra _s <<<"$OPTARG"; SKIP_LIST+=("${_s[@]}") ;;
+        *) echo "Usage: $0 [-d L3_HOME] [-j JOBS] [-f FPS] [-w WIDTH] [-L] [-s COMPOSITE]... [composite name]" >&2; exit 1 ;;
     esac
 done
 shift $((OPTIND - 1))
@@ -123,6 +133,15 @@ mkdir -p "$TIMELAPSE_ROOT"
 
 shopt -s nullglob
 
+# True if the 00:00 frames must be dropped for composite $1
+should_skip_midnight() {
+    local c
+    for c in "${SKIP_LIST[@]}"; do
+        [[ "$c" == "$1" || "$c" == "all" ]] && return 0
+    done
+    return 1
+}
+
 # Builds the timelapse for one composite folder
 make_timelapse() {
     local dir="$1" name out tmp_out log count
@@ -131,11 +150,28 @@ make_timelapse() {
     tmp_out="$TIMELAPSE_ROOT/.$name.tmp.mkv"
     log="$TIMELAPSE_ROOT/.$name.log"
 
-    local frames=("$dir"/*.png)
+    local frames=("$dir"/*.png) src="$dir" filtered=""
+    if should_skip_midnight "$name"; then
+        # Build a temp folder of symlinks without the 00:00 frames
+        filtered="$(mktemp -d "$TIMELAPSE_ROOT/.$name.frames.XXXXXX")"
+        local f kept=() dropped=0
+        for f in "${frames[@]}"; do
+            if [[ "$(basename "$f" .png)" == *_"$SKIP_TIME" ]]; then
+                dropped=$((dropped + 1))
+            else
+                ln -s "$f" "$filtered/$(basename "$f")"
+                kept+=("$f")
+            fi
+        done
+        frames=("${kept[@]}")
+        src="$filtered"
+        echo "[info] $name: skipped $dropped frame(s) at $SKIP_TIME"
+    fi
     count=${#frames[@]}
 
     if [[ $count -lt 2 ]]; then
         echo "[skip] $name: only $count image(s), need at least 2"
+        [[ -n "$filtered" ]] && rm -rf "$filtered"
         return 0
     fi
 
@@ -143,12 +179,13 @@ make_timelapse() {
     # No -vf: the pixel format is negotiated automatically and losslessly
     # (RGB PNG -> FFV1 RGB, grayscale PNG -> FFV1 gray).
     if ! ffmpeg -y -hide_banner -loglevel error \
-            -framerate "$FPS" -pattern_type glob -i "$dir/*.png" \
+            -framerate "$FPS" -pattern_type glob -i "$src/*.png" \
             -c:v ffv1 -level 3 -coder 1 -context 1 -g 1 -slicecrc 1 \
             -f matroska "$tmp_out" >"$log" 2>&1; then
         echo "[fail] $name (log: $log)" >&2
         cat "$log" >&2
         rm -f "$tmp_out"
+        [[ -n "$filtered" ]] && rm -rf "$filtered"
         return 1
     fi
 
@@ -161,19 +198,21 @@ make_timelapse() {
         local mp4_out="$TIMELAPSE_ROOT/$name.mp4"
         local mp4_tmp="$TIMELAPSE_ROOT/.$name.tmp.mp4"
         if ! ffmpeg -y -hide_banner -loglevel error \
-                -framerate "$FPS" -pattern_type glob -i "$dir/*.png" \
+                -framerate "$FPS" -pattern_type glob -i "$src/*.png" \
                 -vf "$MP4_VF" "${MP4_ARGS[@]}" \
                 -colorspace bt709 -color_primaries bt709 -color_trc bt709 -color_range tv \
                 "$mp4_tmp" >"$log" 2>&1; then
             echo "[fail] $name.mp4 (log: $log)" >&2
             cat "$log" >&2
             rm -f "$mp4_tmp"
+            [[ -n "$filtered" ]] && rm -rf "$filtered"
             return 1
         fi
         mv -f "$mp4_tmp" "$mp4_out"
         rm -f "$log"
         echo "[ok  ] $mp4_out"
     fi
+    [[ -n "$filtered" ]] && rm -rf "$filtered"
     return 0
 }
 
