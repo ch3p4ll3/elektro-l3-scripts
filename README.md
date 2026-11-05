@@ -220,7 +220,7 @@ journalctl -u l3-lrit.service -f      # or inspect the last slot
 ### 2. Images (`postprocess/generate_images.sh`)
 
 ```
-./generate_images.sh [-d L3_HOME] [-j JOBS] [products date folder]
+./generate_images.sh [-d L3_HOME] [-j JOBS] [-o] [products date folder]
 ```
 
 Scans `<PRODUCTS_ROOT>/<date>/IMAGES/ELEKTRO-L3/<date>/.../product.cbor`,
@@ -231,11 +231,14 @@ runs `satdump process <folder> <tmpdir>` on every product **in parallel**
 <OUT_ROOT>/<composite name>/<date>.png
 ```
 
-Existing images are overwritten; temporary files live in
+Acquisitions that already have images in `<OUT_ROOT>` are skipped (SatDump
+is not run). Use `-o` to overwrite: SatDump is run again and the images are
+regenerated. Temporary files live in
 `/tmp/elektro_satdump.XXXXXX` and are removed on exit.
 
 ```bash
-./generate_images.sh                      # everything, 4 jobs
+./generate_images.sh                      # everything new, 4 jobs
+./generate_images.sh -o                   # regenerate and overwrite everything
 ./generate_images.sh -j 8                 # 8 parallel SatDump processes
 ./generate_images.sh 20261028_1241        # only products/20261028_1241
 ```
