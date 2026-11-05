@@ -307,7 +307,7 @@ Notes:
 ### 3. Timelapses (`postprocess/generate_timelapse.sh`)
 
 ```
-./generate_timelapse.sh [-d L3_HOME] [-j JOBS] [-f FPS] [-w WIDTH] [-L] [composite name]
+./generate_timelapse.sh [-d L3_HOME] [-j JOBS] [-f FPS] [-w WIDTH] [-L] [-s COMPOSITE]... [composite name]
 ```
 
 For every folder in `<IMAGES_ROOT>` (frames sorted by filename, which sorts
@@ -323,6 +323,8 @@ chronologically thanks to the `YYYYMMDD_HHMM` names) it encodes:
 ./generate_timelapse.sh                             # all composites, 4 jobs, 10 fps
 ./generate_timelapse.sh -f 15                       # 15 fps
 ./generate_timelapse.sh -j 2 msu_gs_Natural_Color   # only one composite
+./generate_timelapse.sh -s msu_gs_Natural_Color     # drop the 00:00 frames of that composite
+./generate_timelapse.sh -s a,b                      # ...of several (or -s all)
 ```
 
 At least 2 frames are required per composite.
