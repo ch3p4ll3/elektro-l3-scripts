@@ -3,7 +3,8 @@
 # Processes every ELEKTRO-L3 product with SatDump (in parallel) and copies
 # the generated composites into:
 #   <OUT_ROOT>/<composite name>/<date of image>.png
-# Existing images are overwritten.
+# Products whose images already exist for that acquisition are skipped
+# (SatDump is not run); pass -o to regenerate and overwrite them.
 #
 # Expected input layout:
 #   <PRODUCTS_ROOT>/<date>/IMAGES/ELEKTRO-L3/<date>/.../product.cbor
@@ -13,9 +14,13 @@
 # <L3_HOME> defaults to ~/Desktop/elektro_l3; see the config block below.
 #
 # Usage:
-#   ./generate_images.sh [-d L3_HOME] [-j JOBS] [products date folder]
+#   ./generate_images.sh [-d L3_HOME] [-j JOBS] [-o] [products date folder]
 #
-#   ./generate_images.sh                      # everything, JOBS = 4
+#   -o   overwrite: do not skip already generated images, run SatDump again
+#        and replace them
+#
+#   ./generate_images.sh                      # everything new, JOBS = 4
+#   ./generate_images.sh -o                   # regenerate everything
 #   ./generate_images.sh -j 8                 # 8 parallel satdump processes
 #   ./generate_images.sh 20261028_1241        # only products/20261028_1241
 #   ./generate_images.sh -d /data/elektro_l3 -j 2 20261028_1241
@@ -35,12 +40,14 @@ if [[ -z "${L3_HOME:-}" && -r "$L3_CONF" ]]; then
 fi
 L3_HOME="${L3_HOME:-$HOME/Desktop/elektro_l3}"
 JOBS=4
+OVERWRITE=0
 
-while getopts ":d:j:" opt; do
+while getopts ":d:j:o" opt; do
     case "$opt" in
         d) L3_HOME="$OPTARG" ;;
         j) JOBS="$OPTARG" ;;
-        *) echo "Usage: $0 [-d L3_HOME] [-j JOBS] [products date folder]" >&2; exit 1 ;;
+        o) OVERWRITE=1 ;;
+        *) echo "Usage: $0 [-d L3_HOME] [-j JOBS] [-o] [products date folder]" >&2; exit 1 ;;
     esac
 done
 shift $((OPTIND - 1))
@@ -109,6 +116,17 @@ process_one() {
     return 0
 }
 
+# True if at least one composite PNG already exists for this acquisition
+# (<OUT_ROOT>/<composite>/<image_date>.png). The composite set is only known
+# after SatDump has run, so any existing output counts as "already generated".
+already_generated() {
+    local image_date="$1" f
+    for f in "$OUT_ROOT"/*/"$image_date.png"; do
+        [[ -e "$f" ]] && return 0
+    done
+    return 1
+}
+
 # Optional argument: restrict to a single products/<date> folder
 if [[ $# -ge 1 ]]; then
     product_dirs=("$PRODUCTS_ROOT/$1")
@@ -118,10 +136,16 @@ fi
 
 # Collect every (acquisition folder, product.cbor) pair first
 tasks=()
+skipped=0
 for product_dir in "${product_dirs[@]}"; do
     product_dir="${product_dir%/}"
     for acq_dir in "$product_dir"/IMAGES/ELEKTRO-L3/*/; do
         acq_dir="${acq_dir%/}"
+        if [[ $OVERWRITE -eq 0 ]] && already_generated "$(basename "$acq_dir")"; then
+            echo "[skip] $(basename "$acq_dir"): images already generated (use -o to overwrite)"
+            skipped=$((skipped + 1))
+            continue
+        fi
         while IFS= read -r -d '' cbor; do
             tasks+=("$acq_dir|$cbor")
         done < <(find "$acq_dir" -type f -name 'product.cbor' -print0 | sort -z)
@@ -129,6 +153,10 @@ for product_dir in "${product_dirs[@]}"; do
 done
 
 if [[ ${#tasks[@]} -eq 0 ]]; then
+    if [[ $skipped -gt 0 ]]; then
+        echo "Nothing to do: $skipped acquisition(s) already generated (use -o to overwrite)."
+        exit 0
+    fi
     echo "No product.cbor found under $PRODUCTS_ROOT" >&2
     exit 1
 fi
